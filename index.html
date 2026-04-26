@@ -270,14 +270,29 @@
 </div>
 
 <script>
-    // // ✅ FIXED: Use absolute backend URL
+    // ✅ FIXED: Use absolute backend URL
     // const API_BASE = 'http://localhost:3000';
-    // const userId = localStorage.getItem('sakhi_userId') || crypto.randomUUID();
-    // localStorage.setItem('sakhi_userId', userId);
 
-    const API_BASE = window.location.origin;
+
+   // पुरानी localhost वाली लाइन को हटा दें या कमेंट कर दें
+// fetch('http://localhost:3000/chat', ...), 
+
+// सिर्फ इसे इस्तेमाल करें
+fetch('/chat', {
+    method: 'POST', // या जो भी आपका मेथड है
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+        message: userInput, 
+        userId: userId 
+    })
+})
+
     const userId = localStorage.getItem('sakhi_userId') || crypto.randomUUID();
     localStorage.setItem('sakhi_userId', userId);
+
+    // const API_BASE = window.location.origin;
+    // const userId = localStorage.getItem('sakhi_userId') || crypto.randomUUID();
+    // localStorage.setItem('sakhi_userId', userId);
 
     const chatArea = document.getElementById('chatArea');
     const msgInput = document.getElementById('messageInput');
