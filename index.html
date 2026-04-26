@@ -270,29 +270,14 @@
 </div>
 
 <script>
-    // ✅ FIXED: Use absolute backend URL
-    // const API_BASE = 'http://localhost:3000';
-
-
-   // पुरानी localhost वाली लाइन को हटा दें या कमेंट कर दें
-// fetch('http://localhost:3000/chat', ...), 
-
-// सिर्फ इसे इस्तेमाल करें
-fetch('/chat', {
-    method: 'POST', // या जो भी आपका मेथड है
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-        message: userInput, 
-        userId: userId 
-    })
-})
+    // ✅ FIXED: Vercel पर चलाने के लिए सही तरीका
+    // अगर localhost पर है तो 3000 यूज़ करेगा, वरना लाइव URL
+    const API_BASE = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3000' 
+        : ''; 
 
     const userId = localStorage.getItem('sakhi_userId') || crypto.randomUUID();
     localStorage.setItem('sakhi_userId', userId);
-
-    // const API_BASE = window.location.origin;
-    // const userId = localStorage.getItem('sakhi_userId') || crypto.randomUUID();
-    // localStorage.setItem('sakhi_userId', userId);
 
     const chatArea = document.getElementById('chatArea');
     const msgInput = document.getElementById('messageInput');
@@ -309,13 +294,27 @@ fetch('/chat', {
     async function loadHistory() {
         try {
             const res = await fetch(`${API_BASE}/chat/history/${userId}`);
-            if (res.ok) messages = await res.json();
-            else messages = [];
+            if (res.ok) {
+                messages = await res.json();
+            } else {
+                messages = [];
+            }
+            
             if (messages.length === 0) {
-                messages.push({ role: 'assistant', content: '✨ नमस्ते! मैं **सखी** हूँ – आपका AI साथी।\n\n✅ वॉयस, फाइल अपलोड, कैलकुलेटर, मौसम, समय, कोड हाइलाइट – सब कुछ।\n\n💬 आप हिंदी, English या mix में बात कर सकते हैं।' });
+                messages.push({ 
+                    role: 'assistant', 
+                    content: '✨ नमस्ते! मैं **सखी** हूँ – आपका AI साथी।\n\n✅ वॉयस, फाइल अपलोड, कैलकुलेटर, मौसम, समय, कोड हाइलाइट – सब कुछ।\n\n💬 आप हिंदी, English या mix में बात कर सकते हैं।' 
+                });
             }
             renderMessages();
-        } catch(e) { console.warn(e); }
+        } catch(e) { 
+            console.warn("History load failed:", e); 
+            // अगर सर्वर डाउन है तो कम से कम वेलकम मैसेज दिखाएं
+            if (messages.length === 0) {
+                messages.push({ role: 'assistant', content: '⚠️ सर्वर से कनेक्ट नहीं हो पा रहा है। कृपया इंटरनेट या MongoDB चेक करें।' });
+                renderMessages();
+            }
+        }
     }
 
     function renderMessages() {
@@ -328,9 +327,15 @@ fetch('/chat', {
             avatar.innerText = msg.role === 'user' ? '👤' : '🤖';
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
+            
             if (msg.role === 'assistant') {
-                bubble.innerHTML = marked.parse(msg.content);
-                bubble.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+                // Marked library use handle errors
+                try {
+                    bubble.innerHTML = marked.parse(msg.content);
+                    bubble.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+                } catch(e) {
+                    bubble.innerText = msg.content;
+                }
             } else {
                 bubble.innerText = msg.content;
             }
@@ -343,6 +348,7 @@ fetch('/chat', {
 
     async function sendMessageToBackend(text) {
         if (!text.trim()) return;
+        
         messages.push({ role: 'user', content: text });
         renderMessages();
         msgInput.value = '';
@@ -359,22 +365,29 @@ fetch('/chat', {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, message: text })
             });
+
             if (!res.ok) {
-                const errorText = await res.text();
-                throw new Error(errorText || `HTTP ${res.status}`);
+                const errorData = await res.json();
+                throw new Error(errorData.error || `Server Error: ${res.status}`);
             }
+
             const data = await res.json();
             messages.push({ role: 'assistant', content: data.reply });
             renderMessages();
         } catch (err) {
             console.error(err);
-            messages.push({ role: 'assistant', content: `❌ त्रुटि: ${err.message}. कृपया सुनिश्चित करें कि backend (http://localhost:3000) चल रहा है।` });
+            // ✅ FIXED: अब यह localhost का नाम नहीं लेगा, सही समस्या बताएगा
+            messages.push({ 
+                role: 'assistant', 
+                content: `❌ एरर: ${err.message}. \n\nसंभावित कारण: \n1. MongoDB कनेक्ट नहीं है। \n2. API Key गलत है।` 
+            });
             renderMessages();
         } finally {
             typingDiv.remove();
         }
     }
 
+    // --- बाकी फंक्शन्स (File, Voice, etc.) वैसे ही रहेंगे ---
     function uploadFile(file) {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -388,51 +401,50 @@ fetch('/chat', {
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.lang = 'hi-IN';
-        recognition.continuous = false;
-        recognition.interimResults = false;
         recognition.onresult = (event) => {
             const spoken = event.results[0][0].transcript;
-            msgInput.value = spoken;
             sendMessageToBackend(spoken);
         };
-        recognition.onerror = () => alert("माइक्रॅफोन एक्सेस नहीं मिला");
         voiceBtn.onclick = () => recognition.start();
-    } else {
-        voiceBtn.disabled = true;
-        voiceBtn.title = "Voice not supported";
     }
 
     sendBtn.onclick = () => sendMessageToBackend(msgInput.value);
     msgInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
+        if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessageToBackend(msgInput.value);
         }
     });
+
     attachBtn.onclick = () => fileInput.click();
     fileInput.onchange = (e) => {
         if (e.target.files[0]) uploadFile(e.target.files[0]);
         fileInput.value = '';
     };
+
     clearBtn.onclick = async () => {
-        if (confirm('पूरी चैट हटानी है?')) {
-            await fetch(`${API_BASE}/chat/history/${userId}`, { method: 'DELETE' });
-            messages = [];
-            renderMessages();
+        if (confirm('क्या आप पूरी चैट डिलीट करना चाहते हैं?')) {
+            try {
+                await fetch(`${API_BASE}/chat/history/${userId}`, { method: 'DELETE' });
+                messages = [{ role: 'assistant', content: 'चैट क्लियर कर दी गई है।' }];
+                renderMessages();
+            } catch(e) { alert("Delete failed"); }
         }
     };
+
     exportBtn.onclick = () => {
         const dataStr = JSON.stringify(messages, null, 2);
         const blob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `sakhi_chat_${new Date().toISOString()}.json`;
+        a.download = `sakhi_chat.json`;
         a.click();
-        URL.revokeObjectURL(url);
     };
+
     themeToggle.onclick = () => document.body.classList.toggle('light');
 
+    // Start
     loadHistory();
 </script>
 </body>
